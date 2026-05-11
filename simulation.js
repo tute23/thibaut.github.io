@@ -35,28 +35,7 @@ const els = {
 };
 
 const palette = ["#2563eb", "#0f766e", "#dc2626", "#9333ea", "#ca8a04", "#0891b2", "#be185d", "#475569"];
-const exampleCode = `// Example: flooding from the leader.
-// p.memory persists across rounds.
-// In anonymous mode, p.id starts as null for non-leaders.
-function send(p) {
-  if (p.round === 0) {
-    p.memory.flood = p.isLeader;
-    p.memory.firstHeard = null;
-  }
-
-  if (p.memory.flood) return "beep";
-  return "listen";
-}
-
-function receive(p) {
-  if (p.observation.heard) {
-    p.memory.flood = true;
-    p.id = p.round;
-    if (p.memory.firstHeard === null) {
-      p.memory.firstHeard = p.round;
-    }
-  }
-}`;
+const exampleCode = '/* SIMULATOR_IDENTITY_TABLE eyIwIjp7Im5hbWUiOiJMIiwiY29sb3IiOiIjN2MzYWVkIn0sIjEiOnsibmFtZSI6IkNXIiwiY29sb3IiOiIjMGY3NjZlIn0sIjIiOnsibmFtZSI6IkNDVyIsImNvbG9yIjoiI2RjMjYyNiJ9LCIzIjp7Im5hbWUiOiJWMSIsImNvbG9yIjoiIzkzMzNlYSJ9LCI0Ijp7Im5hbWUiOiJWMiIsImNvbG9yIjoiI2NhOGEwNCJ9LCI1Ijp7Im5hbWUiOiJWMyIsImNvbG9yIjoiIzA4OTFiMiJ9LCI2Ijp7Im5hbWUiOiJWNCIsImNvbG9yIjoiI2JlMTg1ZCJ9LCI3Ijp7Im5hbWUiOiI3IiwiY29sb3IiOiIjNDc1NTY5In0sIjgiOnsibmFtZSI6IjgiLCJjb2xvciI6IiMyNTYzZWIifSwiOSI6eyJuYW1lIjoiOSIsImNvbG9yIjoiIzBmNzY2ZSJ9LCIxMCI6eyJuYW1lIjoiMTAiLCJjb2xvciI6IiNkYzI2MjYifSwiMTEiOnsibmFtZSI6IjExIiwiY29sb3IiOiIjOTMzM2VhIn0sIjEyIjp7Im5hbWUiOiIxMiIsImNvbG9yIjoiI2NhOGEwNCJ9LCJudWxsIjp7Im5hbWUiOiJBIiwiY29sb3IiOiIjMjU2M2ViIn19 */\nfunction propagateSend(p) {\n    if (p.id == null) return "ccw";\n    else return "cw";\n}\n\nfunction propagateReceive(p, idx) {\n    if (p.observation.cw && p.id == null) p.id = idx;\n    else if (p.observation.ccw && p.id != null) return true;\n    return false;\n}\n\nfunction encodeIds(p) {\n    if (p.id == null) return 1;\n    if (!p.memory.propagate) return 0;\n\n    if (p.id === null) {\n        return 1 << 0;\n    }\n\n    return 1 << (p.id + 1);\n}\n\nfunction decodeIds(value) {\n    const ids = [];\n\n    if (value & 1) {\n        ids.push(null);\n    }\n\n    for (let id = 0; id < 30; id++) {\n        if (value & (1 << (id + 1))) {\n        ids.push(id);\n        }\n    }\n\n    return ids;\n}\n\nfunction send(p) {\n    if (p.round == 0) {\n        if (p.isLeader) return "both";\n        else return "listen";\n    }\n    if (p.round == 1) p.orSend((p.memory.count == 2 ? 1 : 0) + (p.id == null ? 2 : 0));\n    if (p.round == p.memory.roundProp) return propagateSend(p);\n    if (p.round == p.memory.roundProp + 1) p.orSend(encodeIds(p));\n\n    return "listen";\n}\n\nfunction receive(p) {\n    if (p.round == 0) {\n        if (p.isLeader && p.observation.heard) p.terminate(1);\n        else if (p.observation.both) p.memory.count = 2;\n        else if (p.observation.cw) p.id = 1;\n        else if (p.observation.ccw) p.id = 2;\n    }\n    if (p.round == 1) {\n        p.log("observation: " + (p.observation.or & 2));\n        if ((p.observation.or & 1) == 1) \n            p.terminate(2);\n        if ((p.observation.or & 2) == 0)\n            p.terminate(3);\n        p.memory.count = 3;\n        p.memory.lastCount = 0;\n        p.memory.roundProp = 2;\n        p.memory.propagateId = 3;\n    }\n    if (p.round == p.memory.roundProp)\n        p.memory.propagate = propagateReceive(p, p.memory.propagateId);\n    if (p.round == p.memory.roundProp + 1) {\n        const propagateIds = decodeIds(p.observation.or);\n        p.log("propagateIds: " + propagateIds);\n        if (propagateIds.includes(null)) {\n            p.memory.lastCount = propagateIds.length - 1;\n            p.memory.count += p.memory.lastCount;\n        } else {\n            p.memory.lastCount = propagateIds.length;\n            p.memory.count += p.memory.lastCount;\n            p.terminate(p.memory.count);\n        }\n        p.log("last count: " + p.memory.lastCount);\n        if (p.memory.lastCount == 1) {\n            p.memory.roundProp += 2;\n            ++p.memory.propagateId;\n        }\n        p.log("roundProp: " + p.memory.roundProp);\n    }\n    if (p.round > p.memory.roundProp + 1)\n        p.terminate(6);\n}\n';
 
 let state = {
     round: 0,
@@ -962,14 +941,15 @@ window.addEventListener("keydown", event => {
     if (event.key === "Escape") closeSpecModal();
 });
 els.loadExampleBtn.addEventListener("click", () => {
-    els.code.value = exampleCode;
+    els.code.value = loadIdentityTableFromContent(exampleCode);
     compileAlgo();
+    render();
 });
 els.nodeCount.addEventListener("change", resetSimulation);
 els.identityMode.addEventListener("change", resetSimulation);
 els.model.addEventListener("change", resetSimulation);
 
 window.addEventListener("resize", resizeCanvas);
-els.code.value = exampleCode;
+els.code.value = loadIdentityTableFromContent(exampleCode);
 resizeCanvas();
 resetSimulation();
