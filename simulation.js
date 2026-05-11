@@ -350,8 +350,8 @@ function computeObservations(actions) {
         const fromNext = actions[nextId].ccw ? 1 : 0;
         observations[id] = {
             heard: fromPrev + fromNext > 0,
-            cw: fromNext,
-            ccw: fromPrev,
+            cw: fromPrev,
+            ccw: fromNext,
             both: fromPrev > 0 && fromNext > 0,
             silent: fromPrev + fromNext === 0
         };
@@ -669,9 +669,36 @@ function closeSpecModal() {
     els.specModal.setAttribute("aria-hidden", "true");
 }
 
+function encodeIdentityTable() {
+    return btoa(unescape(encodeURIComponent(JSON.stringify(state.identityStyles))));
+}
+
+function decodeIdentityTable(encoded) {
+    return JSON.parse(decodeURIComponent(escape(atob(encoded))));
+}
+
+function createSavedAlgorithmContent() {
+    return `/* SIMULATOR_IDENTITY_TABLE ${encodeIdentityTable()} */\n${els.code.value}`;
+}
+
+function loadIdentityTableFromContent(content) {
+    const match = content.match(/^\/\* SIMULATOR_IDENTITY_TABLE ([A-Za-z0-9+/=]+) \*\/\s*/);
+    if (!match) return content;
+
+    try {
+        state.identityStyles = decodeIdentityTable(match[1]);
+        renderIdentityTable();
+        log("Identity table loaded from file.");
+    } catch (error) {
+        log(`Could not load identity table: ${error.message}`);
+    }
+
+    return content.slice(match[0].length);
+}
+
 async function saveAlgorithm() {
     const defaultName = `algo-round-${state.round}.js`;
-    const content = els.code.value;
+    const content = createSavedAlgorithmContent();
 
     if (window.showSaveFilePicker) {
         try {
@@ -685,7 +712,7 @@ async function saveAlgorithm() {
             const writable = await handle.createWritable();
             await writable.write(content);
             await writable.close();
-            log(`Algorithm saved to ${handle.name}.`);
+            log(`Algorithm and identity table saved to ${handle.name}.`);
             return;
         } catch (error) {
             if (error.name === "AbortError") {
@@ -711,15 +738,17 @@ async function saveAlgorithm() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    log(`Algorithm saved as ${filename}.`);
+    log(`Algorithm and identity table saved as ${filename}.`);
 }
 
 function loadAlgorithmFile(file) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-        els.code.value = String(reader.result || "");
+        const content = String(reader.result || "");
+        els.code.value = loadIdentityTableFromContent(content);
         compileAlgo();
+        render();
         log(`Algorithm loaded from ${file.name}.`);
     };
     reader.onerror = () => {

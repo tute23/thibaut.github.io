@@ -605,6 +605,7 @@ function receive(p) {
                     <li>The <code>null</code> value represents initially unnamed anonymous processes.</li>
                     <li>If your code runs <code>p.id = p.round</code>, the node takes the name and color mapped to that value.</li>
                     <li>If a value does not exist yet, the simulator creates an entry automatically.</li>
+                    <li>Saved algorithm files include this table in a leading comment, and loading the file restores it.</li>
                 </ul>
 
                 <h3>Actions in <code>send(p)</code></h3>
@@ -619,8 +620,8 @@ function receive(p) {
                 <ul>
                     <li><code>p.observation.heard</code>: <code>true</code> if at least one signal is received.</li>
                     <li><code>p.observation.silent</code>: <code>true</code> if no signal is received.</li>
-                    <li><code>p.observation.cw</code>: <code>1</code> if a signal arrives from the clockwise side.</li>
-                    <li><code>p.observation.ccw</code>: <code>1</code> if a signal arrives from the counterclockwise side.</li>
+                    <li><code>p.observation.cw</code>: <code>1</code> if a signal arrived by traveling clockwise (received from the CCW side).</li>
+                    <li><code>p.observation.ccw</code>: <code>1</code> if a signal arrived by traveling counterclockwise (received from the CW side).</li>
                     <li><code>p.observation.both</code>: <code>true</code> if both sides send.</li>
                 </ul>
 
