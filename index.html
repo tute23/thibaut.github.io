@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Ring Simulator</title>
+    <style>
+        :root {
+            --bg: #f3f5f8;
+            --panel: #ffffff;
+            --line: #d9dee8;
+            --text: #20242c;
+            --muted: #697386;
+            --accent: #2563eb;
+            --accent-dark: #1d4ed8;
+            --danger: #b42318;
+            --listen: #64748b;
+            --beep: #f59e0b;
+            --heard: #16a34a;
+            --leader: #7c3aed;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: minmax(520px, 1fr) 430px;
+            gap: 16px;
+            min-height: 100vh;
+            padding: 16px;
+        }
+
+        .workspace,
+        .side {
+            min-width: 0;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+        }
+
+        .visual {
+            display: grid;
+            grid-template-rows: auto minmax(420px, 1fr) auto;
+            min-height: calc(100vh - 32px);
+            overflow: hidden;
+        }
+
+        .topbar,
+        .statusbar,
+        .section {
+            padding: 14px;
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        h1 {
+            margin: 0 0 4px;
+            font-size: 20px;
+            letter-spacing: 0;
+        }
+
+        .subtitle,
+        .hint,
+        .small {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .round-box {
+            min-width: 120px;
+            text-align: right;
+            font-weight: 700;
+        }
+
+        .round-box span {
+            display: block;
+            color: var(--accent);
+            font-size: 24px;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: #fbfcfe;
+            cursor: grab;
+        }
+
+        canvas:active {
+            cursor: grabbing;
+        }
+
+        .statusbar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            border-top: 1px solid var(--line);
+        }
+
+        .metric {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 10px;
+            min-height: 64px;
+        }
+
+        .metric b {
+            display: block;
+            font-size: 18px;
+            margin-top: 4px;
+        }
+
+        .side {
+            display: grid;
+            grid-template-rows: auto auto auto;
+            align-content: start;
+            gap: 16px;
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .section h2 {
+            margin: 0;
+            font-size: 15px;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .info-btn {
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            border-radius: 50%;
+            border-color: var(--line);
+            background: #f8fafc;
+            color: var(--accent);
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+        }
+
+        label {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 650;
+        }
+
+        input,
+        select,
+        textarea,
+        button {
+            font: inherit;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            padding: 8px 9px;
+            background: #fff;
+            color: var(--text);
+        }
+
+        textarea {
+            min-height: 240px;
+            resize: vertical;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.45;
+            tab-size: 2;
+        }
+
+        button {
+            border: 1px solid transparent;
+            border-radius: 7px;
+            padding: 9px 10px;
+            background: #eef2f7;
+            color: var(--text);
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        button:hover {
+            border-color: #c8d0de;
+        }
+
+        .primary {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .primary:hover {
+            background: var(--accent-dark);
+        }
+
+        .danger {
+            color: var(--danger);
+        }
+
+        .list,
+        .log {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            overflow: auto;
+            background: #fff;
+        }
+
+        .list {
+            max-height: 220px;
+        }
+
+        .node-row {
+            display: grid;
+            grid-template-columns: 54px 1fr 60px 54px;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 10px;
+            border-bottom: 1px solid #edf0f5;
+            font-size: 12px;
+        }
+
+        .node-row:last-child {
+            border-bottom: 0;
+        }
+
+        .identity-row {
+            display: grid;
+            grid-template-columns: 64px 1fr 46px;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 10px;
+            border-bottom: 1px solid #edf0f5;
+            font-size: 12px;
+        }
+
+        .identity-row:last-child {
+            border-bottom: 0;
+        }
+
+        .identity-row input {
+            padding: 5px 6px;
+            font-size: 12px;
+        }
+
+        .identity-row input[type="color"] {
+            height: 30px;
+            padding: 2px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 24px;
+            border-radius: 999px;
+            padding: 2px 8px;
+            background: #eef2f7;
+            font-size: 12px;
+            font-weight: 750;
+        }
+
+        .pill.beep {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .pill.listen {
+            background: #e2e8f0;
+            color: #334155;
+        }
+
+        .pill.leader {
+            background: #ede9fe;
+            color: #5b21b6;
+        }
+
+        .log {
+            min-height: 130px;
+            flex: 1;
+            padding: 10px;
+            color: #394150;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+        }
+
+        .code-panel {
+            min-height: fit-content;
+        }
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(15, 23, 42, 0.42);
+            z-index: 20;
+        }
+
+        .modal-backdrop.open {
+            display: flex;
+        }
+
+        .modal {
+            width: min(760px, 100%);
+            max-height: min(760px, calc(100vh - 40px));
+            overflow: auto;
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: 0 18px 50px rgba(15, 23, 42, 0.24);
+        }
+
+        .modal-header {
+            position: sticky;
+            top: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 14px 16px;
+            background: #fff;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 16px;
+        }
+
+        .modal-content {
+            padding: 16px;
+            color: #394150;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .modal-content h3 {
+            margin: 16px 0 6px;
+            color: var(--text);
+            font-size: 14px;
+        }
+
+        .modal-content h3:first-child {
+            margin-top: 0;
+        }
+
+        .modal-content ul {
+            margin: 6px 0 0 18px;
+            padding: 0;
+        }
+
+        .modal-content code,
+        .modal-content pre {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            background: #eef2f7;
+            border-radius: 5px;
+        }
+
+        .modal-content code {
+            padding: 1px 5px;
+        }
+
+        .modal-content pre {
+            overflow: auto;
+            padding: 10px;
+        }
+
+        @media (max-width: 1050px) {
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            .side {
+                max-height: none;
+            }
+
+            .visual {
+                min-height: 720px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="app">
+        <section class="workspace panel visual">
+            <header class="topbar">
+                <div>
+                    <h1>Dynamic Ring Simulator</h1>
+                    <div class="subtitle">Write a local algorithm, drag nodes with the mouse, then inspect actions and observations.</div>
+                </div>
+                <div class="round-box">
+                    Round
+                    <span id="roundValue">0</span>
+                </div>
+            </header>
+
+            <canvas id="canvas"></canvas>
+
+            <footer class="statusbar">
+                <div class="metric">
+                    <div class="small">Processes</div>
+                    <b id="metricNodes">8</b>
+                </div>
+                <div class="metric">
+                    <div class="small">Beep</div>
+                    <b id="metricBeeps">0</b>
+                </div>
+                <div class="metric">
+                    <div class="small">Received</div>
+                    <b id="metricHeard">0</b>
+                </div>
+                <div class="metric">
+                    <div class="small">Done</div>
+                    <b id="metricDone">0</b>
+                </div>
+            </footer>
+        </section>
+
+        <aside class="side">
+            <section class="panel section">
+                <h2>Settings</h2>
+                <div class="row">
+                    <label>
+                        Size n
+                        <input id="nodeCount" type="number" min="1" max="80" value="8">
+                    </label>
+                    <label>
+                        Identity
+                        <select id="identityMode">
+                            <option value="anonymous">Anonymous</option>
+                            <option value="identified">Identified</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="row">
+                    <label>
+                        Mode
+                        <select id="model">
+                            <option value="CO1">CO[1]</option>
+                            <option value="BL">BL</option>
+                            <option value="DBL">DBL</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="row">
+                    <label>
+                        Dynamic order
+                        <select id="orderMode">
+                            <option value="manual">Manual</option>
+                            <option value="rotate">Rotation</option>
+                            <option value="shuffle">Random</option>
+                            <option value="reverse">Reverse</option>
+                            <option value="fixed">Fixed</option>
+                        </select>
+                    </label>
+                    <label>
+                        Run delay (ms)
+                        <input id="runDelay" type="number" min="50" max="5000" value="600">
+                    </label>
+                </div>
+                <label>
+                    Manual order
+                    <input id="manualOrder" type="text" value="0,1,2,3,4,5,6,7">
+                </label>
+                <div class="row-3">
+                    <button class="primary" id="resetBtn">Reset</button>
+                    <button id="stepBtn">1 round</button>
+                    <button id="runBtn">Run</button>
+                </div>
+                <div class="row">
+                    <button id="applyOrderBtn">Apply order</button>
+                    <button class="danger" id="stopBtn">Stop</button>
+                </div>
+            </section>
+
+            <section class="panel section">
+                <h2>Processes</h2>
+                <div class="list" id="nodeTable"></div>
+            </section>
+
+            <section class="panel section">
+                <h2>Identity table</h2>
+                <div class="hint">Mapping from <span class="pill">p.id</span> values to displayed names and colors.</div>
+                <div class="list" id="identityTable"></div>
+                <button id="addIdentityBtn">Add identity</button>
+            </section>
+
+            <section class="panel section code-panel">
+                <div class="section-title">
+                    <h2>Algorithm</h2>
+                    <button class="info-btn" id="specBtn" title="Programming specification">i</button>
+                </div>
+                <div class="hint">
+                    <span class="pill">send(p)</span> runs at the beginning of each round and returns <span class="pill">"beep"</span>, <span class="pill">"listen"</span>, or in DBL/CO[1] <span class="pill">"cw"</span>, <span class="pill">"ccw"</span>, <span class="pill">"both"</span>. Then the simulator computes observations and calls <span class="pill">receive(p)</span>.
+                    In anonymous mode, non-leaders start with <span class="pill">p.id = null</span>, then your code may assign <span class="pill">p.id = value</span>.
+                </div>
+                <textarea id="code"></textarea>
+                <div class="row">
+                    <button id="loadExampleBtn">Flooding example</button>
+                    <button id="compileBtn">Compile</button>
+                </div>
+                <div class="row">
+                    <button id="saveAlgoBtn">Save</button>
+                    <button id="loadAlgoBtn">Load</button>
+                </div>
+                <input id="algoFileInput" type="file" accept=".js,.txt" style="display: none;">
+                <h2>Logs</h2>
+                <div class="log" id="log"></div>
+            </section>
+        </aside>
+    </main>
+
+    <div class="modal-backdrop" id="specModal" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="specTitle">
+            <div class="modal-header">
+                <h2 id="specTitle">Programming Specification</h2>
+                <button id="closeSpecBtn">Close</button>
+            </div>
+            <div class="modal-content">
+                <h3>Round Cycle</h3>
+                <pre><code>function send(p) {
+  return "listen";
+}
+
+function receive(p) {
+  if (p.observation.heard) {
+    p.memory.seen = true;
+  }
+}</code></pre>
+                <ul>
+                    <li><code>send(p)</code> runs for every process at the beginning of the round.</li>
+                    <li>The simulator then computes observations using the current ring order.</li>
+                    <li><code>receive(p)</code> runs after that, with <code>p.observation</code> available.</li>
+                    <li><code>p.memory</code> persists across rounds for each process.</li>
+                </ul>
+
+                <h3>The <code>p</code> Object</h3>
+                <ul>
+                    <li><code>p.id</code>: current process identity. In anonymous mode, it starts as <code>null</code> for non-leaders and can then be changed with <code>p.id = value</code>.</li>
+                    <li><code>p.index</code>: internal debug identifier. Do not use it when testing an anonymous algorithm.</li>
+                    <li><code>p.n</code>: ring size in the simulator.</li>
+                    <li><code>p.round</code>: current round number, starting at <code>0</code>.</li>
+                    <li><code>p.isLeader</code>: <code>true</code> only for the leader.</li>
+                    <li><code>p.anonymous</code>: <code>true</code> when anonymous mode is active.</li>
+                    <li><code>p.memory</code>: local object that the algorithm may mutate.</li>
+                    <li><code>p.output</code> and <code>p.done</code>: process output and termination state.</li>
+                    <li><code>p.terminate(value)</code>: marks the process as terminated with output <code>value</code>.</li>
+                </ul>
+
+                <h3>Identity Table</h3>
+                <ul>
+                    <li>The table maps a <code>p.id</code> value to a displayed name and color.</li>
+                    <li>The <code>null</code> value represents initially unnamed anonymous processes.</li>
+                    <li>If your code runs <code>p.id = p.round</code>, the node takes the name and color mapped to that value.</li>
+                    <li>If a value does not exist yet, the simulator creates an entry automatically.</li>
+                </ul>
+
+                <h3>Actions in <code>send(p)</code></h3>
+                <ul>
+                    <li><code>"listen"</code>, <code>"silent"</code>, <code>"none"</code>: sends nothing.</li>
+                    <li><code>"beep"</code> or <code>"both"</code>: sends to both neighbors.</li>
+                    <li><code>"cw"</code>: sends clockwise only, useful in <code>DBL</code> or <code>CO[1]</code>.</li>
+                    <li><code>"ccw"</code>: sends counterclockwise only, useful in <code>DBL</code> or <code>CO[1]</code>.</li>
+                </ul>
+
+                <h3>Observations in <code>receive(p)</code></h3>
+                <ul>
+                    <li><code>p.observation.heard</code>: <code>true</code> if at least one signal is received.</li>
+                    <li><code>p.observation.silent</code>: <code>true</code> if no signal is received.</li>
+                    <li><code>p.observation.cw</code>: <code>1</code> if a signal arrives from the clockwise side.</li>
+                    <li><code>p.observation.ccw</code>: <code>1</code> if a signal arrives from the counterclockwise side.</li>
+                    <li><code>p.observation.both</code>: <code>true</code> if both sides send.</li>
+                </ul>
+
+                <h3>Models</h3>
+                <ul>
+                    <li><code>BL</code>: half-duplex, no direction. If a process sends, it receives nothing in that round.</li>
+                    <li><code>DBL</code>: directional half-duplex. A listening process distinguishes <code>cw</code> and <code>ccw</code>.</li>
+                    <li><code>CO[1]</code>: directional full-duplex. A process can receive while sending.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script src="simulation.js"></script>
+</body>
+</html>
