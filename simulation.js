@@ -16,6 +16,7 @@ const els = {
     nodeTable: document.getElementById("nodeTable"),
     code: document.getElementById("code"),
     log: document.getElementById("log"),
+    errorBox: document.getElementById("errorBox"),
     resetBtn: document.getElementById("resetBtn"),
     stepBtn: document.getElementById("stepBtn"),
     runBtn: document.getElementById("runBtn"),
@@ -63,16 +64,60 @@ let state = {
     order: [],
     lastActions: [],
     lastObservations: [],
+    lastOrSends: [],
+    lastTerminations: [],
     compiledSend: null,
     compiledReceive: null,
     running: false,
     timer: null,
     drag: null,
-    identityStyles: createDefaultIdentityStyles()
+    identityStyles: createDefaultIdentityStyles(),
+    roundOrValue: 0
 };
 
 function log(message) {
     els.log.textContent = `${message}\n${els.log.textContent}`.slice(0, 6000);
+}
+
+function formatDebugValue(value) {
+    if (typeof value === "string") return value;
+    try {
+        return JSON.stringify(value);
+    } catch (_error) {
+        return String(value);
+    }
+}
+
+function clearError() {
+    els.errorBox.textContent = "";
+    els.errorBox.classList.remove("visible");
+    els.code.classList.remove("code-error");
+}
+
+function reportError(title, error, context = {}) {
+    const details = [];
+    details.push(title);
+    if (context.round !== undefined) details.push(`Round: ${context.round}`);
+    if (context.phase) details.push(`Phase: ${context.phase}`);
+    if (context.processId !== undefined) details.push(`Process: ${context.processId}`);
+    if (error && error.name) details.push(`Type: ${error.name}`);
+    if (error && error.message) details.push(`Message: ${error.message}`);
+
+    const stackLine = findUserStackLine(error);
+    if (stackLine) details.push(`Location: ${stackLine}`);
+
+    if (context.hint) details.push(`Hint: ${context.hint}`);
+
+    els.errorBox.textContent = details.join("\n");
+    els.errorBox.classList.add("visible");
+    els.code.classList.add("code-error");
+    log(`${title}: ${error && error.message ? error.message : "unknown error"}`);
+}
+
+function findUserStackLine(error) {
+    if (!error || !error.stack) return "";
+    const lines = String(error.stack).split("\n").map(line => line.trim());
+    return lines.find(line => line.includes("<anonymous>")) || lines[1] || "";
 }
 
 function resizeCanvas() {
@@ -96,6 +141,8 @@ function createNodes(count) {
     state.order = Array.from({ length: count }, (_, id) => id);
     state.lastActions = Array.from({ length: count }, () => ({ kind: "listen", cw: false, ccw: false }));
     state.lastObservations = Array.from({ length: count }, () => emptyObservation());
+    state.lastOrSends = Array.from({ length: count }, () => null);
+    state.lastTerminations = Array.from({ length: count }, () => null);
 }
 
 function createDefaultIdentityStyles() {
@@ -154,7 +201,8 @@ function emptyObservation() {
         cw: 0,
         ccw: 0,
         both: false,
-        silent: true
+        silent: true,
+        or: 0
     };
 }
 
@@ -169,12 +217,15 @@ if (typeof receive === "function") return receive(process);
 return undefined;`;
         state.compiledSend = new Function("process", sendSource);
         state.compiledReceive = new Function("process", receiveSource);
+        clearError();
         log("Algorithm compiled.");
         return true;
     } catch (error) {
         state.compiledSend = null;
         state.compiledReceive = null;
-        log(`Compilation error: ${error.message}`);
+        reportError("Compilation error", error, {
+            hint: "Check brackets, parentheses, function names, and JavaScript syntax."
+        });
         return false;
     }
 }
@@ -191,9 +242,22 @@ function processView(node, observation = state.lastObservations[node.id]) {
         observation,
         output: node.output,
         done: node.done,
+        log(...values) {
+            const rendered = values.map(value => formatDebugValue(value)).join(" ");
+            log(`[r${state.round} p${node.id}] ${rendered}`);
+        },
+        orSend(value) {
+            const numeric = Number(value);
+            if (!Number.isInteger(numeric)) {
+                throw new Error(`orSend expects an integer, got ${JSON.stringify(value)}`);
+            }
+            state.roundOrValue |= numeric;
+            state.lastOrSends[node.id] = (state.lastOrSends[node.id] ?? 0) | numeric;
+        },
         terminate(value) {
             node.done = true;
             node.output = value;
+            state.lastTerminations[node.id] = value;
             return "listen";
         }
     };
@@ -214,30 +278,49 @@ function setNodeIdentity(node, value) {
     identityStyle(node.labelId);
 }
 
-function normalizeAction(action) {
+function normalizeAction(action, context = {}) {
     const raw = String(action || "listen").toLowerCase();
     if (raw === "beep" || raw === "both") return { kind: "beep", cw: true, ccw: true };
     if (raw === "cw") return { kind: "cw", cw: true, ccw: false };
     if (raw === "ccw") return { kind: "ccw", cw: false, ccw: true };
     if (raw === "silent" || raw === "listen" || raw === "none") return { kind: "listen", cw: false, ccw: false };
-    return { kind: "listen", cw: false, ccw: false };
+
+    reportError("Invalid action", new Error(`send(p) returned ${JSON.stringify(action)}`), {
+        phase: "send",
+        processId: context.processId,
+        round: state.round,
+        hint: 'Return one of "listen", "beep", "both", "cw", or "ccw". Use p.orSend(integer) separately for the global OR primitive.'
+    });
+    return null;
 }
 
 function computeActions() {
     if (!state.compiledSend && !compileAlgo()) return null;
 
     const actions = [];
+    state.roundOrValue = 0;
+    state.lastOrSends = Array.from({ length: state.nodes.length }, () => null);
+    state.lastTerminations = Array.from({ length: state.nodes.length }, () => null);
     for (const node of state.nodes) {
         if (node.done) {
-            actions[node.id] = normalizeAction("listen");
+            actions[node.id] = normalizeAction("listen", { processId: node.id });
             continue;
         }
 
         try {
             const result = state.compiledSend(processView(node, emptyObservation()));
-            actions[node.id] = normalizeAction(result);
+            const action = normalizeAction(result, { processId: node.id });
+            if (!action) {
+                stopRun();
+                return null;
+            }
+            actions[node.id] = action;
         } catch (error) {
-            log(`Send error at process ${node.id}: ${error.message}`);
+            reportError("Runtime error", error, {
+                phase: "send",
+                processId: node.id,
+                round: state.round
+            });
             stopRun();
             return null;
         }
@@ -253,7 +336,11 @@ function applyReceives(observations) {
         try {
             state.compiledReceive(processView(node, observations[node.id]));
         } catch (error) {
-            log(`Receive error at process ${node.id}: ${error.message}`);
+            reportError("Runtime error", error, {
+                phase: "receive",
+                processId: node.id,
+                round: state.round
+            });
             stopRun();
             return false;
         }
@@ -353,7 +440,8 @@ function computeObservations(actions) {
             cw: fromPrev,
             ccw: fromNext,
             both: fromPrev > 0 && fromNext > 0,
-            silent: fromPrev + fromNext === 0
+            silent: fromPrev + fromNext === 0,
+            or: state.roundOrValue
         };
 
         if (model === "BL") {
@@ -402,7 +490,7 @@ function renderNodeTable() {
     els.nodeTable.innerHTML = "";
     const posById = new Map(state.order.map((id, pos) => [id, pos]));
     for (const node of state.nodes) {
-        const action = state.lastActions[node.id] || normalizeAction("listen");
+        const action = state.lastActions[node.id] || { kind: "listen", cw: false, ccw: false };
         const obs = state.lastObservations[node.id] || emptyObservation();
         const style = identityStyle(node.labelId);
         const row = document.createElement("div");
@@ -588,8 +676,27 @@ function draw() {
     ctx.setLineDash([]);
 
     for (const node of state.nodes) {
+        if (state.lastOrSends[node.id] === null) continue;
         const p = positions.get(node.id);
-        const action = state.lastActions[node.id] || normalizeAction("listen");
+        const vx = p.x - cx;
+        const vy = p.y - cy;
+        const length = Math.hypot(vx, vy) || 1;
+        const bubbleX = p.x - (vx / length) * 62;
+        const bubbleY = p.y - (vy / length) * 62;
+        drawConnector(bubbleX, bubbleY, cx, cy, "#06b6d4");
+    }
+
+    if (state.lastOrSends.some(value => value !== null)) {
+        drawBubble(cx, cy, `OR ${state.roundOrValue}`, {
+            fill: "#1f2937",
+            stroke: "#111827",
+            text: "#ffffff"
+        });
+    }
+
+    for (const node of state.nodes) {
+        const p = positions.get(node.id);
+        const action = state.lastActions[node.id] || { kind: "listen", cw: false, ccw: false };
         const obs = state.lastObservations[node.id] || emptyObservation();
         const style = identityStyle(node.labelId);
 
@@ -626,7 +733,83 @@ function draw() {
         ctx.fillStyle = "#475569";
         ctx.font = "11px Inter, sans-serif";
         ctx.fillText(`#${node.id}`, p.x, p.y + 40);
+
+        const vx = p.x - cx;
+        const vy = p.y - cy;
+        const length = Math.hypot(vx, vy) || 1;
+        const ux = vx / length;
+        const uy = vy / length;
+
+        if (state.lastOrSends[node.id] !== null) {
+            const bubbleX = p.x - ux * 62;
+            const bubbleY = p.y - uy * 62;
+            drawBubble(bubbleX, bubbleY, String(state.lastOrSends[node.id]), {
+                fill: "#ecfeff",
+                stroke: "#06b6d4",
+                text: "#164e63"
+            });
+        }
+
+        if (state.lastTerminations[node.id] !== null) {
+            const bubbleX = p.x + ux * 48;
+            const bubbleY = p.y + uy * 48;
+            drawBubble(bubbleX, bubbleY, `out ${formatDebugValue(state.lastTerminations[node.id])}`, {
+                fill: "#f0fdf4",
+                stroke: "#22c55e",
+                text: "#14532d"
+            });
+        }
     }
+}
+
+function drawConnector(x1, y1, x2, y2, color) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawBubble(x, y, text, colors) {
+    const label = String(text);
+    ctx.save();
+    ctx.font = "700 12px Inter, sans-serif";
+    const width = Math.min(Math.max(ctx.measureText(label).width + 18, 42), 150);
+    const height = 26;
+    const left = x - width / 2;
+    const top = y - height / 2;
+
+    ctx.fillStyle = colors.fill;
+    ctx.strokeStyle = colors.stroke;
+    ctx.lineWidth = 1.5;
+    roundRect(left, top, width, height, 13);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = colors.text;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label.length > 18 ? `${label.slice(0, 17)}…` : label, x, y + 0.5);
+    ctx.restore();
+}
+
+function roundRect(x, y, width, height, radius) {
+    const r = Math.min(radius, width / 2, height / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + width - r, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+    ctx.lineTo(x + width, y + height - r);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+    ctx.lineTo(x + r, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
 }
 
 canvas.addEventListener("mousedown", event => {

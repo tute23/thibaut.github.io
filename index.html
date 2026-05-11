@@ -333,6 +333,28 @@
             white-space: pre-wrap;
         }
 
+        .error-box {
+            display: none;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 10px;
+            background: #fff1f2;
+            color: #7f1d1d;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+        }
+
+        .error-box.visible {
+            display: block;
+        }
+
+        .code-error {
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+        }
+
         .code-panel {
             min-height: fit-content;
         }
@@ -556,6 +578,8 @@
                     <button id="loadAlgoBtn">Load</button>
                 </div>
                 <input id="algoFileInput" type="file" accept=".js,.txt" style="display: none;">
+                <h2>Errors</h2>
+                <div class="error-box" id="errorBox"></div>
                 <h2>Logs</h2>
                 <div class="log" id="log"></div>
             </section>
@@ -596,8 +620,36 @@ function receive(p) {
                     <li><code>p.anonymous</code>: <code>true</code> when anonymous mode is active.</li>
                     <li><code>p.memory</code>: local object that the algorithm may mutate.</li>
                     <li><code>p.output</code> and <code>p.done</code>: process output and termination state.</li>
-                    <li><code>p.terminate(value)</code>: marks the process as terminated with output <code>value</code>.</li>
+                    <li><code>p.log(...values)</code>: writes debug output to the simulator Logs panel.</li>
+                    <li><code>p.orSend(value)</code>: contributes an integer to the global bitwise OR primitive for this round and shows a value bubble toward the center.</li>
+                    <li><code>p.terminate(value)</code>: marks the process as terminated with output <code>value</code> and shows an <code>out value</code> bubble outside the ring.</li>
                 </ul>
+
+                <h3>Global OR Primitive</h3>
+                <ul>
+                    <li>During <code>send(p)</code>, any process may call <code>p.orSend(x)</code> with an integer <code>x</code>.</li>
+                    <li>After all <code>send(p)</code> calls finish, the simulator computes the bitwise OR of all contributed values.</li>
+                    <li>Every process reads that same value in <code>receive(p)</code> as <code>p.observation.or</code>.</li>
+                    <li>The center of the ring displays the resulting OR value for the last executed round.</li>
+                    <li>This primitive is global for one round and is independent of neighbor beeps.</li>
+                </ul>
+
+                <h3>Debugging</h3>
+                <ul>
+                    <li><code>p.log(...values)</code> writes to the simulator Logs panel and prefixes the message with the round and process index.</li>
+                    <li><code>console.log(...)</code> writes to the browser developer console.</li>
+                    <li><code>debugger;</code> pauses execution when browser DevTools are open.</li>
+                    <li>The Errors panel reports compilation errors, runtime errors in <code>send</code> or <code>receive</code>, invalid actions, the round, the process, and a stack location when available.</li>
+                </ul>
+                <pre><code>function send(p) {
+  p.log("send", { id: p.id, round: p.round });
+  console.log("browser console", p.index);
+  return "listen";
+}
+
+function receive(p) {
+  p.log("observation", p.observation);
+}</code></pre>
 
                 <h3>Identity Table</h3>
                 <ul>
@@ -623,6 +675,7 @@ function receive(p) {
                     <li><code>p.observation.cw</code>: <code>1</code> if a signal arrived by traveling clockwise (received from the CCW side).</li>
                     <li><code>p.observation.ccw</code>: <code>1</code> if a signal arrived by traveling counterclockwise (received from the CW side).</li>
                     <li><code>p.observation.both</code>: <code>true</code> if both sides send.</li>
+                    <li><code>p.observation.or</code>: bitwise OR of all values passed to <code>p.orSend(x)</code> during the round.</li>
                 </ul>
 
                 <h3>Models</h3>
