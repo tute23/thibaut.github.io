@@ -45,6 +45,7 @@ let state = {
     lastObservations: [],
     lastOrSends: [],
     lastTerminations: [],
+    persistentTerminations: [],
     compiledSend: null,
     compiledReceive: null,
     running: false,
@@ -122,6 +123,7 @@ function createNodes(count) {
     state.lastObservations = Array.from({ length: count }, () => emptyObservation());
     state.lastOrSends = Array.from({ length: count }, () => null);
     state.lastTerminations = Array.from({ length: count }, () => null);
+    state.persistentTerminations = Array.from({ length: count }, () => null);
 }
 
 function createDefaultIdentityStyles() {
@@ -237,6 +239,7 @@ function processView(node, observation = state.lastObservations[node.id]) {
             node.done = true;
             node.output = value;
             state.lastTerminations[node.id] = value;
+            state.persistentTerminations[node.id] = value;
             return "listen";
         }
     };
@@ -344,6 +347,11 @@ function stepRound() {
     const heard = observations.filter(obs => obs.heard).length;
     log(`Round ${state.round}: ${beeps} sends, ${heard} receives, order [${state.order.join(",")}].`);
     render();
+
+    if (state.nodes.length > 0 && state.nodes.every(node => node.done)) {
+        stopRun();
+        log("All processes terminated. Run stopped.");
+    }
 }
 
 function updateDynamicOrder() {
@@ -697,9 +705,9 @@ function draw() {
 
         ctx.beginPath();
         ctx.arc(p.x, p.y, 25, 0, Math.PI * 2);
-        ctx.fillStyle = style.color;
+        ctx.fillStyle = node.done ? "#94a3b8" : style.color;
         ctx.fill();
-        ctx.strokeStyle = node.isLeader ? "#2e1065" : "#ffffff";
+        ctx.strokeStyle = node.done ? "#64748b" : node.isLeader ? "#2e1065" : "#ffffff";
         ctx.lineWidth = node.isLeader ? 4 : 2;
         ctx.stroke();
 
@@ -729,10 +737,10 @@ function draw() {
             });
         }
 
-        if (state.lastTerminations[node.id] !== null) {
+        if (state.persistentTerminations[node.id] !== null) {
             const bubbleX = p.x + ux * 48;
             const bubbleY = p.y + uy * 48;
-            drawBubble(bubbleX, bubbleY, `out ${formatDebugValue(state.lastTerminations[node.id])}`, {
+            drawBubble(bubbleX, bubbleY, `out ${formatDebugValue(state.persistentTerminations[node.id])}`, {
                 fill: "#f0fdf4",
                 stroke: "#22c55e",
                 text: "#14532d"
