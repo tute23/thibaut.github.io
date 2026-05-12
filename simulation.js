@@ -35,7 +35,7 @@ const els = {
 };
 
 const palette = ["#2563eb", "#0f766e", "#dc2626", "#9333ea", "#ca8a04", "#0891b2", "#be185d", "#475569"];
-const exampleCode = '/* SIMULATOR_IDENTITY_TABLE eyIwIjp7Im5hbWUiOiJMIiwiY29sb3IiOiIjN2MzYWVkIn0sIjEiOnsibmFtZSI6IkNXIiwiY29sb3IiOiIjMGY3NjZlIn0sIjIiOnsibmFtZSI6IkNDVyIsImNvbG9yIjoiI2RjMjYyNiJ9LCIzIjp7Im5hbWUiOiJWMSIsImNvbG9yIjoiIzkzMzNlYSJ9LCI0Ijp7Im5hbWUiOiJWMiIsImNvbG9yIjoiI2NhOGEwNCJ9LCI1Ijp7Im5hbWUiOiJWMyIsImNvbG9yIjoiIzA4OTFiMiJ9LCI2Ijp7Im5hbWUiOiJWNCIsImNvbG9yIjoiI2JlMTg1ZCJ9LCI3Ijp7Im5hbWUiOiI3IiwiY29sb3IiOiIjNDc1NTY5In0sIjgiOnsibmFtZSI6IjgiLCJjb2xvciI6IiMyNTYzZWIifSwiOSI6eyJuYW1lIjoiOSIsImNvbG9yIjoiIzBmNzY2ZSJ9LCIxMCI6eyJuYW1lIjoiMTAiLCJjb2xvciI6IiNkYzI2MjYifSwiMTEiOnsibmFtZSI6IjExIiwiY29sb3IiOiIjOTMzM2VhIn0sIjEyIjp7Im5hbWUiOiIxMiIsImNvbG9yIjoiI2NhOGEwNCJ9LCJudWxsIjp7Im5hbWUiOiJBIiwiY29sb3IiOiIjMjU2M2ViIn19 */\nfunction propagateSend(p) {\n    if (p.id == null) return "ccw";\n    else return "cw";\n}\n\nfunction propagateReceive(p, idx) {\n    if (p.observation.cw && p.id == null) p.id = idx;\n    else if (p.observation.ccw && p.id != null) return true;\n    return false;\n}\n\nfunction encodeIds(p) {\n    if (p.id == null) return 1;\n    if (!p.memory.propagate) return 0;\n\n    if (p.id === null) {\n        return 1 << 0;\n    }\n\n    return 1 << (p.id + 1);\n}\n\nfunction decodeIds(value) {\n    const ids = [];\n\n    if (value & 1) {\n        ids.push(null);\n    }\n\n    for (let id = 0; id < 30; id++) {\n        if (value & (1 << (id + 1))) {\n        ids.push(id);\n        }\n    }\n\n    return ids;\n}\n\nfunction send(p) {\n    if (p.round == 0) {\n        if (p.isLeader) return "both";\n        else return "listen";\n    }\n    if (p.round == 1) p.orSend((p.memory.count == 2 ? 1 : 0) + (p.id == null ? 2 : 0));\n    if (p.round == p.memory.roundProp) return propagateSend(p);\n    if (p.round == p.memory.roundProp + 1) p.orSend(encodeIds(p));\n\n    return "listen";\n}\n\nfunction receive(p) {\n    if (p.round == 0) {\n        if (p.isLeader && p.observation.heard) p.terminate(1);\n        else if (p.observation.both) p.memory.count = 2;\n        else if (p.observation.cw) p.id = 1;\n        else if (p.observation.ccw) p.id = 2;\n    }\n    if (p.round == 1) {\n        p.log("observation: " + (p.observation.or & 2));\n        if ((p.observation.or & 1) == 1) \n            p.terminate(2);\n        if ((p.observation.or & 2) == 0)\n            p.terminate(3);\n        p.memory.count = 3;\n        p.memory.lastCount = 0;\n        p.memory.roundProp = 2;\n        p.memory.propagateId = 3;\n    }\n    if (p.round == p.memory.roundProp)\n        p.memory.propagate = propagateReceive(p, p.memory.propagateId);\n    if (p.round == p.memory.roundProp + 1) {\n        const propagateIds = decodeIds(p.observation.or);\n        p.log("propagateIds: " + propagateIds);\n        if (propagateIds.includes(null)) {\n            p.memory.lastCount = propagateIds.length - 1;\n            p.memory.count += p.memory.lastCount;\n        } else {\n            p.memory.lastCount = propagateIds.length;\n            p.memory.count += p.memory.lastCount;\n            p.terminate(p.memory.count);\n        }\n        p.log("last count: " + p.memory.lastCount);\n        if (p.memory.lastCount == 1) {\n            p.memory.roundProp += 2;\n            ++p.memory.propagateId;\n        }\n        p.log("roundProp: " + p.memory.roundProp);\n    }\n    if (p.round > p.memory.roundProp + 1)\n        p.terminate(6);\n}\n';
+let exampleCode = '/* SIMULATOR_IDENTITY_TABLE eyIwIjp7Im5hbWUiOiJMIiwiY29sb3IiOiIjN2MzYWVkIn0sIjEiOnsibmFtZSI6IkNXIiwiY29sb3IiOiIjMGY3NjZlIn0sIjIiOnsibmFtZSI6IkNDVyIsImNvbG9yIjoiI2RjMjYyNiJ9LCIzIjp7Im5hbWUiOiJWMSIsImNvbG9yIjoiIzkzMzNlYSJ9LCI0Ijp7Im5hbWUiOiJWMiIsImNvbG9yIjoiI2NhOGEwNCJ9LCI1Ijp7Im5hbWUiOiJWMyIsImNvbG9yIjoiIzA4OTFiMiJ9LCI2Ijp7Im5hbWUiOiJWNCIsImNvbG9yIjoiI2JlMTg1ZCJ9LCI3Ijp7Im5hbWUiOiI3IiwiY29sb3IiOiIjNDc1NTY5In0sIjgiOnsibmFtZSI6IjgiLCJjb2xvciI6IiMyNTYzZWIifSwiOSI6eyJuYW1lIjoiOSIsImNvbG9yIjoiIzBmNzY2ZSJ9LCIxMCI6eyJuYW1lIjoiMTAiLCJjb2xvciI6IiNkYzI2MjYifSwiMTEiOnsibmFtZSI6IjExIiwiY29sb3IiOiIjOTMzM2VhIn0sIjEyIjp7Im5hbWUiOiIxMiIsImNvbG9yIjoiI2NhOGEwNCJ9LCJudWxsIjp7Im5hbWUiOiJBIiwiY29sb3IiOiIjMjU2M2ViIn19 */\nfunction propagateSend(p) {\n    if (p.id == null) return "ccw";\n    else return "cw";\n}\n\nfunction propagateReceive(p, idx) {\n    if (p.observation.cw && p.id == null) p.id = idx;\n    else if (p.observation.ccw && p.id != null) return true;\n    return false;\n}\n\nfunction encodeIds(p) {\n    if (p.id == null) return 1;\n    if (!p.memory.propagate) return 0;\n\n    if (p.id === null) {\n        return 1 << 0;\n    }\n\n    return 1 << (p.id + 1);\n}\n\nfunction decodeIds(value) {\n    const ids = [];\n\n    if (value & 1) {\n        ids.push(null);\n    }\n\n    for (let id = 0; id < 30; id++) {\n        if (value & (1 << (id + 1))) {\n        ids.push(id);\n        }\n    }\n\n    return ids;\n}\n\n\nfunction ensureCountById(p) {\n    if (!p.memory.countById) p.memory.countById = {};\n}\n\nfunction recordCountForIds(p, ids, count) {\n    ensureCountById(p);\n    for (const id of ids) {\n        if (id !== null && id !== undefined) {\n            p.memory.countById[id] = count;\n        }\n    }\n}\n\nfunction send(p) {\n    if (p.round == 0) {\n        if (p.isLeader) return "both";\n        else return "listen";\n    }\n    if (p.round == 1) p.orSend((p.memory.count == 2 ? 1 : 0) + (p.id == null ? 2 : 0));\n    if (p.round == p.memory.roundProp) return propagateSend(p);\n    if (p.round == p.memory.roundProp + 1) p.orSend(encodeIds(p));\n\n    return "listen";\n}\n\nfunction receive(p) {\n    ensureCountById(p);\n    if (p.round == 0) {\n        if (p.isLeader && p.observation.heard) p.terminate(1);\n        else if (p.observation.both) p.memory.count = 2;\n        else if (p.observation.cw) p.id = 1;\n        else if (p.observation.ccw) p.id = 2;\n    }\n    if (p.round == 1) {\n        p.log("observation: " + (p.observation.or & 2));\n        if ((p.observation.or & 1) == 1) \n            p.terminate(2);\n        if ((p.observation.or & 2) == 0)\n            p.terminate(3);\n        p.memory.count = 3;\n        recordCountForIds(p, [0, 1, 2], p.memory.count);\n        p.memory.lastCount = 0;\n        p.memory.roundProp = 2;\n        p.memory.propagateId = 3;\n    }\n    if (p.round == p.memory.roundProp)\n        p.memory.propagate = propagateReceive(p, p.memory.propagateId);\n    if (p.round == p.memory.roundProp + 1) {\n        if (p.memory.lastCount == 1) {\n            const propagateIds = decodeIds(p.observation.or);\n            if (propagateIds.includes(null)) {\n                p.memory.lastCount = propagateIds.length - 1;\n                p.memory.count += p.memory.lastCount;\n                recordCountForIds(p, propagateIds, p.memory.count);\n            } else {\n                p.memory.lastCount = propagateIds.length;\n                p.memory.count += p.memory.lastCount;\n                recordCountForIds(p, propagateIds, p.memory.count);\n                p.terminate(p.memory.count);\n            }\n            if (p.memory.lastCount <= 2) {\n                p.memory.roundProp = p.round + 1;\n                ++p.memory.propagateId;\n            }\n        } else if (p.memory.lastCount == 2) {\n            p.memory.propagateIds = decodeIds(p.observation.or);\n        } else {\n            p.memory.roundProp = -100;\n        }\n    }\n    if (p.round == p.memory.roundProp + 2) {\n        if (p.memory.lastCount == 2) {\n            const propagateIds2 = decodeIds(p.observation.or);\n            \n        }\n    }\n    if (p.round > p.memory.roundProp + 1)\n        p.terminate(6);\n}\n';
 
 let state = {
     round: 0,
@@ -52,7 +52,9 @@ let state = {
     timer: null,
     drag: null,
     identityStyles: createDefaultIdentityStyles(),
-    roundOrValue: 0
+    roundOrValue: 0,
+    signalAnimationStart: 0,
+    signalAnimationRunning: false
 };
 
 function log(message) {
@@ -337,6 +339,12 @@ function stepRound() {
     const actions = computeActions();
     if (!actions) return;
 
+    state.signalAnimationStart = performance.now();
+    if (!state.signalAnimationRunning) {
+        state.signalAnimationRunning = true;
+        requestAnimationFrame(animateSignals);
+    }
+
     const observations = computeObservations(actions);
     state.lastActions = actions;
     state.lastObservations = observations;
@@ -443,6 +451,9 @@ function computeObservations(actions) {
 
 function startRun() {
     if (state.running) return;
+    if (state.nodes.length > 0 && state.nodes.every(node => node.done)) {
+        resetSimulation();
+    }
     state.running = true;
     els.runBtn.textContent = "Running";
     const tick = () => {
@@ -687,20 +698,24 @@ function draw() {
         const obs = state.lastObservations[node.id] || emptyObservation();
         const style = identityStyle(node.labelId);
 
-        if (obs.heard) {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 31, 0, Math.PI * 2);
-            ctx.strokeStyle = "rgba(22, 163, 74, 0.55)";
-            ctx.lineWidth = 5;
-            ctx.stroke();
-        }
+        const vx = p.x - cx;
+        const vy = p.y - cy;
+        const length = Math.hypot(vx, vy) || 1;
+        const ux = vx / length;
+        const uy = vy / length;
 
-        if (action.cw || action.ccw) {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 39, 0, Math.PI * 2);
-            ctx.strokeStyle = "rgba(245, 158, 11, 0.65)";
-            ctx.lineWidth = 3;
-            ctx.stroke();
+        const signalProgress = currentSignalProgress();
+        if (obs.cw) {
+            drawReceiveArc(p.x, p.y, uy, -ux, signalProgress);
+        }
+        if (obs.ccw) {
+            drawReceiveArc(p.x, p.y, -uy, ux, signalProgress);
+        }
+        if (action.cw) {
+            drawWifiSignal(p.x, p.y, -uy, ux, signalProgress, "245, 158, 11", false);
+        }
+        if (action.ccw) {
+            drawWifiSignal(p.x, p.y, uy, -ux, signalProgress, "245, 158, 11", false);
         }
 
         ctx.beginPath();
@@ -720,12 +735,6 @@ function draw() {
         ctx.fillStyle = "#475569";
         ctx.font = "11px Inter, sans-serif";
         ctx.fillText(`#${node.id}`, p.x, p.y + 40);
-
-        const vx = p.x - cx;
-        const vy = p.y - cy;
-        const length = Math.hypot(vx, vy) || 1;
-        const ux = vx / length;
-        const uy = vy / length;
 
         if (state.lastOrSends[node.id] !== null) {
             const bubbleX = p.x - ux * 62;
@@ -747,6 +756,51 @@ function draw() {
             });
         }
     }
+}
+
+function currentSignalProgress() {
+    if (!state.signalAnimationStart) return 1;
+    return ((performance.now() - state.signalAnimationStart) % 900) / 900;
+}
+
+function animateSignals() {
+    if (!state.lastActions.some(action => action.cw || action.ccw)) {
+        state.signalAnimationRunning = false;
+        draw();
+        return;
+    }
+    draw();
+    requestAnimationFrame(animateSignals);
+}
+
+function drawReceiveArc(x, y, dx, dy, progress) {
+    const angle = Math.atan2(dy, dx);
+    const blink = 0.35 + 0.55 * Math.abs(Math.sin(progress * Math.PI * 2));
+    ctx.save();
+    ctx.strokeStyle = `rgba(22, 163, 74, ${blink})`;
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(x, y, 33, angle - 0.62, angle + 0.62);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawWifiSignal(x, y, dx, dy, progress, rgb, inward = false) {
+    const angle = Math.atan2(dy, dx);
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    for (const offset of [0, 0.32, 0.64]) {
+        const wave = (progress + offset) % 1;
+        const radius = inward ? 59 - wave * 28 : 31 + wave * 28;
+        const alpha = 0.82 * (1 - wave);
+        ctx.strokeStyle = `rgba(${rgb}, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, angle - 0.33, angle + 0.33);
+        ctx.stroke();
+    }
+    ctx.restore();
 }
 
 function drawConnector(x1, y1, x2, y2, color) {
@@ -927,6 +981,20 @@ function loadAlgorithmFile(file) {
     reader.readAsText(file);
 }
 
+async function loadExampleFromFile() {
+    try {
+        const response = await fetch(`example.js?ts=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        exampleCode = await response.text();
+        log("Example loaded from example.js.");
+    } catch (error) {
+        log(`Could not fetch example.js; using embedded fallback. ${error.message}`);
+    }
+    els.code.value = loadIdentityTableFromContent(exampleCode);
+    compileAlgo();
+    render();
+}
+
 els.resetBtn.addEventListener("click", resetSimulation);
 els.stepBtn.addEventListener("click", stepRound);
 els.runBtn.addEventListener("click", startRun);
@@ -949,15 +1017,12 @@ window.addEventListener("keydown", event => {
     if (event.key === "Escape") closeSpecModal();
 });
 els.loadExampleBtn.addEventListener("click", () => {
-    els.code.value = loadIdentityTableFromContent(exampleCode);
-    compileAlgo();
-    render();
+    loadExampleFromFile();
 });
 els.nodeCount.addEventListener("change", resetSimulation);
 els.identityMode.addEventListener("change", resetSimulation);
 els.model.addEventListener("change", resetSimulation);
 
 window.addEventListener("resize", resizeCanvas);
-els.code.value = loadIdentityTableFromContent(exampleCode);
 resizeCanvas();
-resetSimulation();
+loadExampleFromFile().then(() => resetSimulation());
