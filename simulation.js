@@ -31,7 +31,13 @@ const els = {
     addIdentityBtn: document.getElementById("addIdentityBtn"),
     specBtn: document.getElementById("specBtn"),
     specModal: document.getElementById("specModal"),
-    closeSpecBtn: document.getElementById("closeSpecBtn")
+    closeSpecBtn: document.getElementById("closeSpecBtn"),
+    verifyN: document.getElementById("verifyN"),
+    verifyRounds: document.getElementById("verifyRounds"),
+    verifyCountingBtn: document.getElementById("verifyCountingBtn"),
+    verifyNamingBtn: document.getElementById("verifyNamingBtn"),
+    replayTraceBtn: document.getElementById("replayTraceBtn"),
+    verifyLog: document.getElementById("verifyLog")
 };
 
 const palette = ["#2563eb", "#0f766e", "#dc2626", "#9333ea", "#ca8a04", "#0891b2", "#be185d", "#475569"];
@@ -54,7 +60,9 @@ let state = {
     identityStyles: createDefaultIdentityStyles(),
     roundOrValue: 0,
     signalAnimationStart: 0,
-    signalAnimationRunning: false
+    signalAnimationRunning: false,
+    lastVerificationTrace: [],
+    lastVerificationN: null
 };
 
 function log(message) {
@@ -893,6 +901,374 @@ function closeSpecModal() {
     els.specModal.setAttribute("aria-hidden", "true");
 }
 
+
+function verificationLog(message) {
+    els.verifyLog.textContent = `${message}\n${els.verifyLog.textContent}`.slice(0, 10000);
+}
+
+function clearVerificationLog() {
+    els.verifyLog.textContent = "";
+    setVerificationStatus("neutral");
+}
+
+function setVerificationStatus(status) {
+    els.verifyLog.classList.remove("verify-success", "verify-fail", "verify-neutral");
+    if (status === "success") els.verifyLog.classList.add("verify-success");
+    else if (status === "fail") els.verifyLog.classList.add("verify-fail");
+    else els.verifyLog.classList.add("verify-neutral");
+}
+
+function cloneForVerification(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+function makeVerificationState(n) {
+    return {
+        round: 0,
+        nodes: Array.from({ length: n }, (_, id) => ({
+            internal: id,
+            labelId: id === 0 ? 0 : null,
+            isLeader: id === 0,
+            memory: {},
+            done: false,
+            output: null
+        }))
+    };
+}
+
+function verificationKey(sim) {
+    return JSON.stringify({
+        round: sim.round,
+        nodes: sim.nodes.map(node => ({
+            id: node.labelId,
+            memory: node.memory,
+            done: node.done,
+            output: node.output
+        }))
+    });
+}
+
+function allVerificationDone(sim) {
+    return sim.nodes.every(node => node.done);
+}
+
+function verifyCountingOutput(sim, n) {
+    for (const node of sim.nodes) {
+        if (node.done && node.output !== n) {
+            return `process ${node.internal} output ${JSON.stringify(node.output)} instead of ${n}`;
+        }
+    }
+    return "";
+}
+
+function verifyNamingOutput(sim) {
+    if (!allVerificationDone(sim)) return "";
+    const names = sim.nodes.map(node => node.output ?? node.labelId);
+    const keys = names.map(name => JSON.stringify(name));
+    if (new Set(keys).size !== keys.length) {
+        return `duplicate names: ${names.map(formatDebugValue).join(", ")}`;
+    }
+    return "";
+}
+
+function verificationObservation() {
+    return { heard: false, cw: 0, ccw: 0, both: false, silent: true, or: 0 };
+}
+
+function verificationProcessView(sim, node, observation) {
+    const view = {
+        index: node.internal,
+        n: sim.nodes.length,
+        round: sim.round,
+        isLeader: node.isLeader,
+        anonymous: true,
+        memory: node.memory,
+        observation,
+        output: node.output,
+        done: node.done,
+        log() {},
+        orSend(value) {
+            const numeric = Number(value);
+            if (!Number.isInteger(numeric)) {
+                throw new Error(`orSend expects an integer, got ${JSON.stringify(value)}`);
+            }
+            sim.roundOrValue |= numeric;
+        },
+        terminate(value) {
+            node.done = true;
+            node.output = value;
+            return "listen";
+        }
+    };
+    Object.defineProperty(view, "id", {
+        get() { return node.labelId; },
+        set(value) { node.labelId = parseIdentityValue(value); },
+        enumerable: true
+    });
+    return view;
+}
+
+function normalizeVerificationAction(action) {
+    const raw = String(action || "listen").toLowerCase();
+    if (raw === "beep" || raw === "both") return { kind: "beep", cw: true, ccw: true };
+    if (raw === "cw") return { kind: "cw", cw: true, ccw: false };
+    if (raw === "ccw") return { kind: "ccw", cw: false, ccw: true };
+    if (raw === "silent" || raw === "listen" || raw === "none") return { kind: "listen", cw: false, ccw: false };
+    throw new Error(`invalid action ${JSON.stringify(action)}`);
+}
+
+function verificationNodeSignature(node) {
+    return JSON.stringify({
+        id: node.labelId,
+        memory: node.memory,
+        done: node.done,
+        output: node.output
+    });
+}
+
+function hasDirectionalVerificationSend(baseSim) {
+    const sim = cloneForVerification(baseSim);
+    sim.roundOrValue = 0;
+    for (const node of sim.nodes) {
+        if (node.done) continue;
+        const result = state.compiledSend(verificationProcessView(sim, node, verificationObservation()));
+        const action = normalizeVerificationAction(result);
+        if (action.cw || action.ccw) return true;
+    }
+    return false;
+}
+
+function reducedOrdersForState(sim) {
+    if (!hasDirectionalVerificationSend(sim)) {
+        return [Array.from({ length: sim.nodes.length }, (_, id) => id)];
+    }
+
+    const rest = sim.nodes
+        .filter(node => node.internal !== 0)
+        .map(node => node.internal);
+    const result = [];
+
+    function rec(prefix, remaining) {
+        if (remaining.length === 0) {
+            result.push([0, ...prefix]);
+            return;
+        }
+
+        const usedSignatures = new Set();
+        for (let i = 0; i < remaining.length; i++) {
+            const node = sim.nodes[remaining[i]];
+            const signature = verificationNodeSignature(node);
+            if (usedSignatures.has(signature)) continue;
+            usedSignatures.add(signature);
+            rec([...prefix, remaining[i]], [...remaining.slice(0, i), ...remaining.slice(i + 1)]);
+        }
+    }
+
+    rec([], rest);
+    return result;
+}
+
+function stepVerificationState(baseSim, order) {
+    const sim = cloneForVerification(baseSim);
+    sim.roundOrValue = 0;
+    const actions = [];
+
+    for (const node of sim.nodes) {
+        if (node.done) {
+            actions[node.internal] = normalizeVerificationAction("listen");
+            continue;
+        }
+        const result = state.compiledSend(verificationProcessView(sim, node, verificationObservation()));
+        actions[node.internal] = normalizeVerificationAction(result);
+    }
+
+    const observations = Array.from({ length: sim.nodes.length }, () => verificationObservation());
+    const model = els.model.value;
+    for (let pos = 0; pos < order.length; pos++) {
+        const id = order[pos];
+        const prevId = order[(pos - 1 + order.length) % order.length];
+        const nextId = order[(pos + 1) % order.length];
+        const action = actions[id];
+        if ((model === "BL" || model === "DBL") && (action.cw || action.ccw)) continue;
+
+        const fromPrev = actions[prevId].cw ? 1 : 0;
+        const fromNext = actions[nextId].ccw ? 1 : 0;
+        observations[id] = {
+            heard: fromPrev + fromNext > 0,
+            cw: fromPrev,
+            ccw: fromNext,
+            both: fromPrev > 0 && fromNext > 0,
+            silent: fromPrev + fromNext === 0,
+            or: sim.roundOrValue
+        };
+        if (model === "BL") {
+            observations[id].cw = observations[id].heard ? 1 : 0;
+            observations[id].ccw = observations[id].heard ? 1 : 0;
+            observations[id].both = observations[id].heard;
+        }
+    }
+
+    for (const node of sim.nodes) {
+        if (!node.done) {
+            state.compiledReceive(verificationProcessView(sim, node, observations[node.internal]));
+        }
+    }
+    sim.round += 1;
+    delete sim.roundOrValue;
+    return sim;
+}
+
+
+function replayLastTrace() {
+    clearVerificationLog();
+    if (!state.lastVerificationTrace || state.lastVerificationTrace.length === 0) {
+        verificationLog("No verification trace to replay.");
+        return;
+    }
+
+    stopRun();
+    if (state.lastVerificationN !== null) {
+        els.nodeCount.value = state.lastVerificationN;
+        els.verifyN.value = state.lastVerificationN;
+    }
+    resetSimulation();
+    els.orderMode.value = "manual";
+    verificationLog(`Replaying trace: ${formatVerificationTrace(state.lastVerificationTrace)}`);
+
+    let index = 0;
+    function playNext() {
+        if (index >= state.lastVerificationTrace.length) {
+            verificationLog("Trace replay finished.");
+            return;
+        }
+        const order = state.lastVerificationTrace[index];
+        els.manualOrder.value = order.join(",");
+        applyManualOrder(true);
+        stepRound();
+        index += 1;
+        window.setTimeout(playNext, clamp(parseInt(els.runDelay.value, 10) || 600, 80, 5000));
+    }
+
+    playNext();
+}
+
+function formatVerificationTrace(trace) {
+    if (!trace.length) return "initial state";
+    return trace.map((order, index) => `r${index}: [${order.join(",")}]`).join(" -> ");
+}
+
+function runVerification(kind) {
+    clearVerificationLog();
+    state.lastVerificationTrace = [];
+    state.lastVerificationN = null;
+    if (!compileAlgo()) {
+        els.log.textContent = "";
+        setVerificationStatus("fail");
+        verificationLog("Compilation failed; verification not started.");
+        return;
+    }
+    els.log.textContent = "";
+
+    const n = Math.max(1, parseInt(els.verifyN.value, 10) || 1);
+    state.lastVerificationN = n;
+    const maxRounds = clamp(parseInt(els.verifyRounds.value, 10) || 1, 1, 40);
+    const maxStates = 60000;
+    const seen = new Set();
+    let frontier = new Map();
+    let traces = new Map();
+    let terminal = 0;
+    let exploredTransitions = 0;
+    let exploredOrderSets = 0;
+
+    const initial = makeVerificationState(n);
+    const initialKey = verificationKey(initial);
+    frontier.set(initialKey, initial);
+    traces.set(initialKey, []);
+    seen.add(initialKey);
+    verificationLog(`Starting ${kind} verification: n=${n}, maxRounds=${maxRounds}`);
+
+    try {
+        for (let depth = 0; depth < maxRounds; depth++) {
+            const next = new Map();
+            for (const [simKey, sim] of frontier.entries()) {
+                const trace = traces.get(simKey) || [];
+                const countingError = kind === "counting" ? verifyCountingOutput(sim, n) : "";
+                const namingError = kind === "naming" ? verifyNamingOutput(sim) : "";
+                if (countingError || namingError) {
+                    setVerificationStatus("fail");
+                    verificationLog(`FAIL at round ${sim.round}: ${countingError || namingError}`);
+                    state.lastVerificationTrace = trace;
+                    state.lastVerificationN = n;
+                    verificationLog(`Trace: ${formatVerificationTrace(trace)}`);
+                    verificationLog(JSON.stringify(sim.nodes, null, 2));
+                    return;
+                }
+
+                if (allVerificationDone(sim)) {
+                    terminal += 1;
+                    continue;
+                }
+
+                const orders = reducedOrdersForState(sim);
+                exploredOrderSets += orders.length;
+                for (const order of orders) {
+                    exploredTransitions += 1;
+                    const child = stepVerificationState(sim, order);
+                    const childCountingError = kind === "counting" ? verifyCountingOutput(child, n) : "";
+                    const childNamingError = kind === "naming" ? verifyNamingOutput(child) : "";
+                    if (childCountingError || childNamingError) {
+                        setVerificationStatus("fail");
+                        verificationLog(`FAIL after order [${order.join(",")}], round ${child.round}: ${childCountingError || childNamingError}`);
+                        state.lastVerificationTrace = [...trace, order];
+                        state.lastVerificationN = n;
+                        verificationLog(`Trace: ${formatVerificationTrace(state.lastVerificationTrace)}`);
+                        verificationLog(JSON.stringify(child.nodes, null, 2));
+                        return;
+                    }
+
+                    if (allVerificationDone(child)) {
+                        terminal += 1;
+                        continue;
+                    }
+
+                    const key = verificationKey(child);
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        next.set(key, child);
+                        traces.set(key, [...trace, order]);
+                        if (seen.size > maxStates) {
+                            setVerificationStatus("neutral");
+                            verificationLog(`STOP: state limit ${maxStates} reached. Increase pruning or lower n/max rounds.`);
+                            return;
+                        }
+                    }
+                }
+            }
+            verificationLog(`round ${depth + 1}: frontier=${next.size}, seen=${seen.size}, terminal=${terminal}, orderBranches=${exploredOrderSets}, transitions=${exploredTransitions}`);
+            frontier = next;
+            if (frontier.size === 0) {
+                setVerificationStatus("success");
+                verificationLog(`PASS: all explored executions terminated correctly. terminal=${terminal}, seen=${seen.size}`);
+                return;
+            }
+        }
+        setVerificationStatus("neutral");
+        verificationLog(`INCONCLUSIVE: ${frontier.size} states still active after ${maxRounds} rounds. seen=${seen.size}, terminal=${terminal}`);
+        const first = frontier.entries().next().value;
+        if (first) {
+            const [activeKey, activeState] = first;
+            state.lastVerificationTrace = traces.get(activeKey) || [];
+            state.lastVerificationN = n;
+            verificationLog(`Example active trace: ${formatVerificationTrace(state.lastVerificationTrace)}`);
+            verificationLog(JSON.stringify(activeState.nodes, null, 2));
+        }
+    } catch (error) {
+        setVerificationStatus("fail");
+        verificationLog(`ERROR: ${error.message}`);
+        if (error.stack) verificationLog(error.stack);
+    }
+}
+
 function encodeIdentityTable() {
     return btoa(unescape(encodeURIComponent(JSON.stringify(state.identityStyles))));
 }
@@ -1000,6 +1376,9 @@ els.stepBtn.addEventListener("click", stepRound);
 els.runBtn.addEventListener("click", startRun);
 els.stopBtn.addEventListener("click", stopRun);
 els.compileBtn.addEventListener("click", compileAlgo);
+els.verifyCountingBtn.addEventListener("click", () => runVerification("counting"));
+els.verifyNamingBtn.addEventListener("click", () => runVerification("naming"));
+els.replayTraceBtn.addEventListener("click", replayLastTrace);
 els.saveAlgoBtn.addEventListener("click", saveAlgorithm);
 els.loadAlgoBtn.addEventListener("click", () => els.algoFileInput.click());
 els.algoFileInput.addEventListener("change", event => {

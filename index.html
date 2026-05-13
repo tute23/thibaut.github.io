@@ -350,6 +350,24 @@
             display: block;
         }
 
+        .verify-success {
+            border-color: #86efac;
+            background: #f0fdf4;
+            color: #14532d;
+        }
+
+        .verify-fail {
+            border-color: #fecaca;
+            background: #fff1f2;
+            color: #7f1d1d;
+        }
+
+        .verify-neutral {
+            border-color: var(--line);
+            background: #fff;
+            color: #394150;
+        }
+
         .code-error {
             border-color: #ef4444;
             box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
@@ -557,6 +575,26 @@
                 <div class="hint">Mapping from <span class="pill">p.id</span> values to displayed names and colors.</div>
                 <div class="list" id="identityTable"></div>
                 <button id="addIdentityBtn">Add identity</button>
+            </section>
+
+            <section class="panel section">
+                <h2>Verification</h2>
+                <div class="row">
+                    <label>
+                        Verify n
+                        <input id="verifyN" type="number" min="1" value="6">
+                    </label>
+                    <label>
+                        Max rounds
+                        <input id="verifyRounds" type="number" min="1" max="40" value="12">
+                    </label>
+                </div>
+                <div class="row">
+                    <button id="verifyCountingBtn">Verify counting</button>
+                    <button id="verifyNamingBtn">Verify naming</button>
+                </div>
+                <button id="replayTraceBtn">Replay last trace</button>
+                <div class="log" id="verifyLog"></div>
             </section>
 
             <section class="panel section code-panel">
