@@ -43,7 +43,7 @@ function decodeIds(value) {
     const ids = [];
     if (value & 1) ids.push(null);
 
-    for (let id = 0; id < 30; id++) {
+    for (let id = 0; 1 << (id + 1) <= value; id++) {
         if (value & (1 << (id + 1))) ids.push(id);
     }
     return ids;
