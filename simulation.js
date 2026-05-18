@@ -152,7 +152,7 @@ function identityKey(value) {
 }
 
 function parseIdentityValue(value) {
-    if (value === "null" || value === "") return null;
+    if (value === null || value === undefined || value === "null" || value === "") return null;
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : value;
 }
